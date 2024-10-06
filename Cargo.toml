@@ -1,0 +1,16 @@
+[package]
+name = "path_toolkit"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "path_toolkit"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+
+ndarray = "0.15.6"
+ndarray-linalg = { version = "0.16.0", features = ["openblas-system"] }
+splines = "4.3.1"
+simple_qp = "0.2.2"
