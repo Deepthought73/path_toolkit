@@ -38,7 +38,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Setup runner
         run: |
-          echo "hello world"
+          sudo apt update
+          sudo apt install openssl libssl-dev -y
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
