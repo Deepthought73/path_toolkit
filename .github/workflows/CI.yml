@@ -44,7 +44,7 @@ jobs:
           sccache: 'true'
           manylinux: 2014
           before-script-linux:
-            yum install -y openssl-devel libopenblas libopenblas-devel
+            yum install -y openssl-devel openblas-devel
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
