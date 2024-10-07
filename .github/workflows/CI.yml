@@ -36,11 +36,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Setup runner
-        run: |
-          sudo apt update
-          sudo apt install openssl libssl-dev -y
+      # - name: Setup runner
+      #   run: |
+      #     sudo apt update
+      #     sudo apt install openssl libssl-dev -y
       - name: Build wheels
+        env:
+          OPENSSL_DIR: Hallo Welt
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
