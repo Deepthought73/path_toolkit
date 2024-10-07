@@ -42,7 +42,9 @@ jobs:
           # sudo apt update
           # sudo apt install openssl libssl-dev -y
       - name: Set env
-        run: echo "OPENSSL_DIR=$(openssl version -d)" >> $GITHUB_ENV
+        run: echo "OPENSSL_DIR=/usr/lib/ssl" >> $GITHUB_ENV
+      - name: Test env
+        run: echo $OPENSSL_DIR
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
