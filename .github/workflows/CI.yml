@@ -41,14 +41,10 @@ jobs:
           openssl version -d
           # sudo apt update
           # sudo apt install openssl libssl-dev -y
-      - name: Set env
-        run: |
-          #echo "OPENSSL_DIR=/usr/lib/ssl" >> $GITHUB_ENV
-          #echo "OPENSSL_LIB_DIR=/usr/lib/ssl" >> $GITHUB_ENV
-          export OPENSSL_DIR=/usr/lib/ssl
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          docker-options: -e OPENSSL_DIR /usr/lib/ssl
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
