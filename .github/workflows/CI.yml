@@ -44,7 +44,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          docker-options: -e OPENSSL_DIR /usr/lib/ssl
+          docker-options: -e OPENSSL_DIR=/usr/lib/ssl
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
