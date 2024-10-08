@@ -81,4 +81,4 @@ jobs:
           MATURIN_REPOSITY: testpypi
         with:
           command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          args: --skip-existing wheels-*/*
