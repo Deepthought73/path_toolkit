@@ -4,13 +4,20 @@ build-backend = "maturin"
 
 [project]
 name = "path_toolkit"
-requires-python = ">=3.8"
-classifiers = [
-    "Programming Language :: Rust",
+license = { file = "LICENSE" }
+description = "Useful functions for working with paths"
+authors = [{ name = "Kilian Northoff", email = "kilian.northoff@tum.de" }]
+
+requires-python = ">=3.8, <=3.12"
+classifiers = ["Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/Deepthought73/path_toolkit.git"
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 sdist-include = ["LICENSE", "README.md"]
