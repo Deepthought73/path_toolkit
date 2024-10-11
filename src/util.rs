@@ -118,3 +118,36 @@ where
     }
     v
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct Projection {
+    /// Normalized scalar projection
+    pub nsp: f64,
+    /// Scalar projection
+    pub sp: f64,
+    /// Scalar rejection == length of the perpendicular
+    pub sr: f64,
+    /// Projected point on the line
+    pub middle_point: [f64; 2],
+}
+
+pub fn compute_projection(a: [f64; 2], b: [f64; 2], point: [f64; 2]) -> Projection {
+    let a_b = [b[0] - a[0], b[1] - a[1]];
+    let a_point = [point[0] - a[0], point[1] - a[1]];
+    let a_b_length2 = a_b[0].powi(2) + a_b[1].powi(2);
+
+    let nsp = (a_b[0] * a_point[0] + a_b[1] * a_point[1]) / a_b_length2;
+    let middle_point = [a[0] + a_b[0] * nsp, a[1] + a_b[1] * nsp];
+    let sr = ((middle_point[0] - point[0]).powi(2) + (middle_point[1] - point[1]).powi(2)).sqrt();
+
+    Projection {
+        nsp,
+        sp: nsp * a_b_length2.sqrt(),
+        sr,
+        middle_point,
+    }
+}
+
+pub fn point_equals(a: [f64; 2], b: [f64; 2], epsilon: f64) -> bool {
+    (a[0] - b[0]).abs() <= epsilon && (a[1] - b[1]).abs() <= epsilon
+}

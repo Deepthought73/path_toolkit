@@ -1,6 +1,6 @@
 use crate::util::{
-    compute_differences, extract_points_x, extract_points_y, linspace, make_spline,
-    taubin_circle_fit,
+    compute_differences, compute_projection, extract_points_x, extract_points_y, linspace,
+    make_spline, point_equals, taubin_circle_fit, Projection,
 };
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -333,10 +333,128 @@ impl Path {
         }
         Self::from_points(new_points)
     }
+
+    #[pyo3(signature = (point, epsilon=1e-2))]
+    /// find_index_from_point(point, epsilon=1e-2)
+    ///
+    /// Returns the index of the nearest point on the path in front of the given point.
+    /// If the point outside the path, None is returned
+    ///
+    /// :param point: Point of interest
+    /// :param epsilon: The distance within two points are considered equal
+    ///
+    /// :type point: list[float]
+    /// :type epsilon: float
+    ///
+    /// :returns: The index of the nearest point
+    /// :rtype: Option[int]
+    pub fn find_index_from_point(&self, point: [f64; 2], epsilon: f64) -> Option<usize> {
+        let mut ret = self.find_nearest_projection(point).map(|(i, _)| i);
+        if point_equals(point, *self.points.first()?, epsilon) {
+            ret = Some(0);
+        }
+        if point_equals(point, *self.points.last()?, epsilon) {
+            ret = Some(self.points.len() - 1);
+        }
+        ret
+    }
+
+    #[pyo3(signature = (point, epsilon=1e-2))]
+    /// path_length_from_point(point, epsilon=1e-2)
+    ///
+    /// Returns the path length from the first point to the given point.
+    /// If the point outside the path, None is returned
+    ///
+    /// :param point: Point of interest
+    /// :param epsilon: The distance within two points are considered equal
+    ///
+    /// :type point: list[float]
+    /// :type epsilon: float
+    ///
+    /// :returns: The path length
+    /// :rtype: Option[int]
+    pub fn path_length_from_point(&self, point: [f64; 2], epsilon: f64) -> Option<f64> {
+        let i = self.find_index_from_point(point, epsilon)?;
+        let mut s = self.path_length_per_point()[i];
+        if i + 1 < self.points.len() {
+            let (a, b) = (self.points[i], self.points[i + 1]);
+            let p = compute_projection(a, b, point);
+            s += p.sp;
+        }
+        Some(s)
+    }
+
+    #[pyo3(signature = (start=None, end=None, epsilon=1e-2))]
+    /// sub_path(start=None, end=None, epsilon=1e-2)
+    ///
+    /// Returns the sub path from start to end.
+    /// If start is None, the path begins at the beginning.
+    /// The same holds for end.
+    /// The new path is not necessarily equidistant.
+    ///
+    /// :param start: Beginning of the sub path
+    /// :param end: End of the sub path
+    /// :param epsilon: The distance within two points are considered equal
+    ///
+    /// :type start: list[float]
+    /// :type end: list[float]
+    /// :type epsilon: float
+    ///
+    /// :returns: The sub path
+    /// :rtype: Path
+    pub fn sub_path(
+        &self,
+        start: Option<[f64; 2]>,
+        end: Option<[f64; 2]>,
+        epsilon: f64,
+    ) -> Option<Self> {
+        let first = *self.points.first()?;
+        let last = *self.points.last()?;
+        let last_index = self.points.len();
+        let mut add_start = false;
+        let mut add_end = false;
+
+        let start = start.unwrap_or(first);
+        let end = end.unwrap_or(last);
+
+        let (start_index, start_point) = if point_equals(start, first, epsilon) {
+            (0, first)
+        } else if point_equals(start, last, epsilon) {
+            (last_index, last)
+        } else {
+            add_start = true;
+            self.find_nearest_projection(start)
+                .map(|(i, p)| (i + 1, p.middle_point))?
+        };
+
+        let (end_index, end_point) = if point_equals(end, first, epsilon) {
+            (0, first)
+        } else if point_equals(end, last, epsilon) {
+            (last_index, last)
+        } else {
+            add_end = true;
+            self.find_nearest_projection(end)
+                .map(|(i, p)| (i, p.middle_point))?
+        };
+
+        if start_index > last_index {
+            None?
+        }
+
+        let mut new_points = vec![];
+        if add_start {
+            new_points.push(start_point);
+        }
+        new_points.extend(&self.points[start_index..end_index]);
+        if add_end {
+            new_points.push(end_point);
+        }
+        Some(Self::from_points(new_points))
+    }
 }
 
 impl Path {
-    pub fn path_length_per_point(&self) -> &[f64] {
+    fn path_length_per_point(&self) -> &[f64] {
         self.path_length_per_point.get_or_init(|| {
             let n = self.points.len();
             let mut distance = vec![0.0; n];
@@ -354,7 +472,7 @@ impl Path {
         })
     }
 
-    pub fn orientation(&self) -> &[f64] {
+    fn orientation(&self) -> &[f64] {
         self.orientation.get_or_init(|| {
             let path = &self.points;
             let n = path.len();
@@ -379,7 +497,7 @@ impl Path {
         })
     }
 
-    pub fn unit_tangent_vector(&self) -> &[[f64; 2]] {
+    fn unit_tangent_vector(&self) -> &[[f64; 2]] {
         self.unit_tangent_vector.get_or_init(|| {
             compute_differences(&self.x)
                 .into_iter()
@@ -392,7 +510,7 @@ impl Path {
         })
     }
 
-    pub fn curvature(&self) -> &[f64] {
+    fn curvature(&self) -> &[f64] {
         self.curvature.get_or_init(|| {
             let x_d = compute_differences(&self.x);
             let x_dd = compute_differences(&x_d);
@@ -409,5 +527,14 @@ impl Path {
 
             curvature
         })
+    }
+
+    fn find_nearest_projection(&self, point: [f64; 2]) -> Option<(usize, Projection)> {
+        self.points
+            .windows(2)
+            .map(|ps| compute_projection(ps[0], ps[1], point))
+            .enumerate()
+            .filter(|(_, p)| 0.0 <= p.nsp && p.nsp < 1.0)
+            .min_by(|(_, p1), (_, p2)| p1.sr.total_cmp(&p2.sr))
     }
 }
