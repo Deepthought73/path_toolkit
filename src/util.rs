@@ -131,6 +131,17 @@ pub struct Projection {
     pub middle_point: [f64; 2],
 }
 
+impl Projection {
+    pub fn on_point(point: [f64; 2]) -> Self {
+        Self {
+            nsp: 0.0,
+            sp: 0.0,
+            sr: 0.0,
+            middle_point: point,
+        }
+    }
+}
+
 pub fn compute_projection(a: [f64; 2], b: [f64; 2], point: [f64; 2]) -> Projection {
     let a_b = [b[0] - a[0], b[1] - a[1]];
     let a_point = [point[0] - a[0], point[1] - a[1]];

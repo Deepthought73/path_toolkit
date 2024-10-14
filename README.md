@@ -30,7 +30,7 @@ The result is cached such that no additional computation is required on repeated
 | `curvature`             | The curvature for each point.               |
 | `unit_tangent_vector`   | The unit tangent vector at each point.      |
 
-## Class functions
+## Class methods
 
 | Function                       | Description                                                                                                                                                          |
 |:-------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -39,3 +39,6 @@ The result is cached such that no additional computation is required on repeated
 | `without_duplicate_points`     | Returns a path without consecutive duplicate points.                                                                                                                 |
 | `find_circle_segments`         | Returns a list of circle segments with the starting end ending index of the point list and respective radius.                                                        |
 | `compute_circle_fit_curvature` | Returns the curvature profile of the path using the circle segments from `find_circle_segments`.                                                                     |
+| `index_from_point`             | Finds the index of the nearest point from a given point.                                                                                                             |
+| `path_length_from_point`       | Finds the path length of a given point.                                                                                                                              |
+| `sub_path`                     | Returns a path ranging from a given start point to a given end point.                                                                                                |

@@ -335,7 +335,7 @@ impl Path {
     }
 
     #[pyo3(signature = (point, epsilon=1e-2))]
-    /// find_index_from_point(point, epsilon=1e-2)
+    /// index_from_point(point, epsilon=1e-2)
     ///
     /// Returns the index of the nearest point on the path in front of the given point.
     /// If the point outside the path, None is returned
@@ -348,15 +348,8 @@ impl Path {
     ///
     /// :returns: The index of the nearest point
     /// :rtype: Option[int]
-    pub fn find_index_from_point(&self, point: [f64; 2], epsilon: f64) -> Option<usize> {
-        let mut ret = self.find_nearest_projection(point).map(|(i, _)| i);
-        if point_equals(point, *self.points.first()?, epsilon) {
-            ret = Some(0);
-        }
-        if point_equals(point, *self.points.last()?, epsilon) {
-            ret = Some(self.points.len() - 1);
-        }
-        ret
+    pub fn index_from_point(&self, point: [f64; 2], epsilon: f64) -> Option<usize> {
+        self.nearest_projection(point, epsilon).map(|(i, _)| i)
     }
 
     #[pyo3(signature = (point, epsilon=1e-2))]
@@ -374,7 +367,7 @@ impl Path {
     /// :returns: The path length
     /// :rtype: Option[int]
     pub fn path_length_from_point(&self, point: [f64; 2], epsilon: f64) -> Option<f64> {
-        let i = self.find_index_from_point(point, epsilon)?;
+        let i = self.index_from_point(point, epsilon)?;
         let mut s = self.path_length_per_point()[i];
         if i + 1 < self.points.len() {
             let (a, b) = (self.points[i], self.points[i + 1]);
@@ -384,8 +377,8 @@ impl Path {
         Some(s)
     }
 
-    #[pyo3(signature = (start=None, end=None, epsilon=1e-2))]
-    /// sub_path(start=None, end=None, epsilon=1e-2)
+    #[pyo3(signature = (start=None, end=None, epsilon=0.01))]
+    /// sub_path(start=None, end=None, epsilon=0.01)
     ///
     /// Returns the sub path from start to end.
     /// If start is None, the path begins at the beginning.
@@ -411,44 +404,34 @@ impl Path {
         let first = *self.points.first()?;
         let last = *self.points.last()?;
         let last_index = self.points.len();
-        let mut add_start = false;
-        let mut add_end = false;
 
         let start = start.unwrap_or(first);
         let end = end.unwrap_or(last);
 
-        let (start_index, start_point) = if point_equals(start, first, epsilon) {
-            (0, first)
-        } else if point_equals(start, last, epsilon) {
-            (last_index, last)
-        } else {
-            add_start = true;
-            self.find_nearest_projection(start)
-                .map(|(i, p)| (i + 1, p.middle_point))?
-        };
+        let (start_index, start_point, start_nsp) = self
+            .nearest_projection(start, epsilon)
+            .map(|(i, p)| (i + 1, p.middle_point, p.nsp))?;
 
-        let (end_index, end_point) = if point_equals(end, first, epsilon) {
-            (0, first)
-        } else if point_equals(end, last, epsilon) {
-            (last_index, last)
-        } else {
-            add_end = true;
-            self.find_nearest_projection(end)
-                .map(|(i, p)| (i, p.middle_point))?
-        };
+        let (end_index, end_point, end_nsp) = self
+            .nearest_projection(end, epsilon)
+            .map(|(i, p)| (i + 1, p.middle_point, p.nsp))?;
 
-        if start_index > last_index {
+        if start_index > end_index || start_index == end_index && start_nsp > end_nsp {
             None?
         }
 
         let mut new_points = vec![];
-        if add_start {
+        if start_index > 0
+            && start_index < last_index
+            && !point_equals(start_point, self.points[start_index], epsilon)
+        {
             new_points.push(start_point);
         }
         new_points.extend(&self.points[start_index..end_index]);
-        if add_end {
+        if new_points.is_empty() || !point_equals(end_point, *new_points.last().unwrap(), epsilon) {
             new_points.push(end_point);
         }
+
         Some(Self::from_points(new_points))
     }
 }
@@ -529,12 +512,20 @@ impl Path {
         })
     }
 
-    fn find_nearest_projection(&self, point: [f64; 2]) -> Option<(usize, Projection)> {
-        self.points
-            .windows(2)
-            .map(|ps| compute_projection(ps[0], ps[1], point))
-            .enumerate()
-            .filter(|(_, p)| 0.0 <= p.nsp && p.nsp < 1.0)
-            .min_by(|(_, p1), (_, p2)| p1.sr.total_cmp(&p2.sr))
+    fn nearest_projection(&self, point: [f64; 2], epsilon: f64) -> Option<(usize, Projection)> {
+        let first_point = *self.points.first()?;
+        let last_point = *self.points.last()?;
+        if point_equals(point, first_point, epsilon) {
+            Some((0, Projection::on_point(first_point)))
+        } else if point_equals(point, last_point, epsilon) {
+            Some((self.points.len() - 1, Projection::on_point(last_point)))
+        } else {
+            self.points
+                .windows(2)
+                .map(|ps| compute_projection(ps[0], ps[1], point))
+                .enumerate()
+                .filter(|(_, p)| 0.0 <= p.nsp && p.nsp < 1.0)
+                .min_by(|(_, p1), (_, p2)| p1.sr.total_cmp(&p2.sr))
+        }
     }
 }
