@@ -147,7 +147,7 @@ impl Path {
     pub fn compute_circle_fit_curvature(&self, max_rmse: f64) -> Vec<f64> {
         let circle_segments = self.find_circle_segments(0, self.x.len(), max_rmse);
 
-        let mut curvature = vec![];
+        let mut curvature = Vec::with_capacity(self.x.len());
         for (start, end, c) in circle_segments {
             for _ in start..end {
                 curvature.push(c);
@@ -265,7 +265,7 @@ impl Path {
     ///
     /// :returns: The smoothed path
     /// :rtype: Path
-    pub fn smoothed_path(&self, max_deviation: f64) -> Self {
+    pub fn smoothed_path(&self, max_deviation: f64) -> Option<Self> {
         let n = self.points.len();
         let orientation = self.orientation();
 
@@ -303,15 +303,23 @@ impl Path {
         }
 
         let mut solver = ClarabelSolver::default();
+
         solver.settings.verbose = false;
-        let solution = solver.solve(prob, objective, constraints).unwrap();
+        solver.settings.max_iter = 1000;
+        solver.settings.tol_gap_abs = 1e-4;
+        solver.settings.tol_gap_rel = 1e-4;
+        solver.settings.tol_feas = 1e-4;
+        solver.settings.iterative_refinement_abstol = 1e-4;
+        solver.settings.iterative_refinement_reltol = 1e-4;
+
+        let solution = solver.solve(prob, objective, constraints).ok()?;
         let new_points = solution
             .eval_vec(&xs)
             .into_iter()
             .zip(solution.eval_vec(&ys))
             .map(|(x, y)| [x, y])
             .collect();
-        Self::from_points(new_points)
+        Some(Self::from_points(new_points))
     }
 
     /// without_duplicate_points()
