@@ -1,8 +1,10 @@
-use crate::path2d::{ElasticBandMethod, InterpolationMethod, Path2D, ResamplingMethod};
+use crate::path2d::Path2D;
+use crate::util_structs::{ElasticBandMethod, InterpolationMethod, ResamplingMethod};
 use pyo3::prelude::*;
 
 mod path2d;
 mod util;
+mod util_structs;
 
 #[test]
 fn sub_path_edge_cases_test() {

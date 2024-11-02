@@ -2,14 +2,6 @@ use ndarray::{stack, Array1, Axis};
 use ndarray_linalg::SVD;
 use splines::{Interpolation, Key, Spline};
 
-pub fn extract_points_x(points: &[[f64; 2]]) -> Vec<f64> {
-    points.iter().map(|it| it[0]).collect()
-}
-
-pub fn extract_points_y(points: &[[f64; 2]]) -> Vec<f64> {
-    points.iter().map(|it| it[1]).collect()
-}
-
 pub fn compute_differences(arr: &[f64]) -> Vec<f64> {
     let n = arr.len();
     let mut grad = vec![0.0; n];

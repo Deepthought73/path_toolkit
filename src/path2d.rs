@@ -1,7 +1,8 @@
 use crate::util::{
-    compute_differences, compute_projection, extract_points_x, extract_points_y, linspace,
-    make_spline, point_equals, taubin_circle_fit, Projection,
+    compute_differences, compute_projection, linspace, make_spline, point_equals,
+    taubin_circle_fit, Projection,
 };
+use crate::util_structs::{ElasticBandMethod, InterpolationMethod, ResamplingMethod};
 use numpy::{PyArray1, PyArray2, ToPyArray};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -15,7 +16,7 @@ use splines::Interpolation;
 use std::cell::OnceCell;
 
 #[pyclass]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 /// Path(points=None, x=None, y=None)
 ///
 /// Class storing a 2D path.
@@ -40,73 +41,6 @@ pub struct Path2D {
     curvature: OnceCell<Vec<f64>>,
 }
 
-#[pyclass(eq)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
-pub enum ResamplingMethod {
-    ByNumberPoints {
-        number_points: usize,
-    },
-    BySamplingDistance {
-        sampling_distance: f64,
-        drop_last: bool,
-    },
-}
-
-#[pymethods]
-impl ResamplingMethod {
-    #[staticmethod]
-    /// by_number_points(number_points)
-    ///
-    /// The path will be equidistantly resampled using the given number of points.
-    ///
-    /// :param number_points: Number of points
-    ///
-    /// :type number_points: int
-    ///
-    /// :returns: The resampling method
-    /// :rtype: ResamplingMethod
-    pub fn by_number_points(number_points: usize) -> Self {
-        Self::ByNumberPoints { number_points }
-    }
-
-    #[staticmethod]
-    #[pyo3(signature = (sampling_distance, drop_last=true))]
-    /// by_sampling_distance(sampling_distance, drop_last=True)
-    ///
-    /// The path will be resampled using the given sampling_distance.
-    /// The distance between the last and second last point will differ from sampling distance.
-    /// Setting drop_last=True will omit the last point.
-    ///
-    /// :param sampling_distance: Sampling distance
-    /// :param drop_last: Omits the last point when true.
-    ///
-    /// :type sampling_distance: float
-    /// :type drop_last: bool
-    ///
-    /// :returns: The resampling method
-    /// :rtype: ResamplingMethod
-    pub fn by_sampling_distance(sampling_distance: f64, drop_last: bool) -> Self {
-        Self::BySamplingDistance {
-            sampling_distance,
-            drop_last,
-        }
-    }
-}
-
-#[pyclass(eq, eq_int)]
-#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd, Debug)]
-pub enum InterpolationMethod {
-    Cubic,
-    Linear,
-}
-
-#[pyclass(eq, eq_int)]
-#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd, Debug)]
-pub enum ElasticBandMethod {
-    SquareBounds,
-    OrthogonalBounds,
-}
-
 #[pymethods]
 impl Path2D {
     #[new]
@@ -122,48 +56,6 @@ impl Path2D {
             _ => Err(PyTypeError::new_err(
                 "Create path either from points or coordinates",
             )),
-        }
-    }
-
-    #[staticmethod]
-    /// from_points(points)
-    ///
-    /// Initiates a path from a list of points.
-    ///
-    /// :param points: List of points
-    ///
-    /// :type points: list[list[float]]
-    pub fn from_points(points: Vec<[f64; 2]>) -> Self {
-        Self {
-            x: extract_points_x(&points),
-            y: extract_points_y(&points),
-            points,
-            path_length_per_point: Default::default(),
-            orientation: Default::default(),
-            unit_tangent_vector: Default::default(),
-            curvature: Default::default(),
-        }
-    }
-
-    #[staticmethod]
-    /// from_coordinates(x, y)
-    ///
-    /// Initiates a path from its x and y coordinates
-    ///
-    /// :param x: List of x coordinates
-    /// :param y: List of y coordinates
-    ///
-    /// :type x: list[float]
-    /// :type y: list[float]
-    pub fn from_coordinates(x: Vec<f64>, y: Vec<f64>) -> Self {
-        Self {
-            points: x.iter().zip(y.iter()).map(|it| [*it.0, *it.1]).collect(),
-            x,
-            y,
-            path_length_per_point: Default::default(),
-            orientation: Default::default(),
-            unit_tangent_vector: Default::default(),
-            curvature: Default::default(),
         }
     }
 
@@ -623,6 +515,24 @@ impl Path2D {
 }
 
 impl Path2D {
+    pub fn from_points(points: Vec<[f64; 2]>) -> Self {
+        Self {
+            x: points.iter().map(|it| it[0]).collect(),
+            y: points.iter().map(|it| it[1]).collect(),
+            points,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_coordinates(x: Vec<f64>, y: Vec<f64>) -> Self {
+        Self {
+            points: x.iter().zip(y.iter()).map(|it| [*it.0, *it.1]).collect(),
+            x,
+            y,
+            ..Default::default()
+        }
+    }
+
     fn path_length_per_point(&self) -> &[f64] {
         self.path_length_per_point.get_or_init(|| {
             let n = self.points.len();
