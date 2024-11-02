@@ -1,5 +1,6 @@
 use crate::path2d;
 use crate::path2d::{ElasticBandMethod, InterpolationMethod, ResamplingMethod};
+use crate::util::vec2_to_pyarray2;
 use numpy::{PyArray1, PyArray2, ToPyArray};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -82,6 +83,36 @@ impl Path2D {
     }
 
     #[getter]
+    pub fn get_points(&self) -> Vec<[f64; 2]> {
+        self.path.points.clone()
+    }
+
+    #[getter]
+    pub fn get_points_np<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        vec2_to_pyarray2(py, &self.path.points)
+    }
+
+    #[getter]
+    pub fn get_x(&self) -> Vec<f64> {
+        self.path.x.clone()
+    }
+
+    #[getter]
+    pub fn get_x_np<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        self.path.x.to_pyarray_bound(py)
+    }
+
+    #[getter]
+    pub fn get_y(&self) -> Vec<f64> {
+        self.path.y.clone()
+    }
+
+    #[getter]
+    pub fn get_y_np<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        self.path.y.to_pyarray_bound(py)
+    }
+
+    #[getter]
     pub fn get_path_length_per_point(&self) -> Vec<f64> {
         self.path.path_length_per_point().to_vec()
     }
@@ -119,17 +150,7 @@ impl Path2D {
         &'py self,
         py: Python<'py>,
     ) -> Bound<'py, PyArray2<f64>> {
-        PyArray2::from_vec2_bound(
-            py,
-            &self
-                .path
-                .unit_tangent_vector()
-                .iter()
-                .map(|it| it.to_vec())
-                .collect::<Vec<_>>(),
-        )
-        // unwrap is ok here, since shape is always (n, 2) ⇒ cannot panic
-        .unwrap()
+        vec2_to_pyarray2(py, self.path.unit_tangent_vector())
     }
 
     #[getter]
@@ -197,7 +218,7 @@ impl Path2D {
     /// :type epsilon: float
     ///
     /// :returns: Resampled path
-    /// :rtype: Path
+    /// :rtype: Path2D
     pub fn resampled_path(
         &self,
         resampling_method: ResamplingMethod,
@@ -225,7 +246,7 @@ impl Path2D {
     /// :type elastic_band_type: ElasticBandType
     ///
     /// :returns: The smoothed path
-    /// :rtype: Path
+    /// :rtype: Path2D
     pub fn smoothed_path_elastic_band(
         &self,
         max_deviation: f64,
@@ -245,7 +266,7 @@ impl Path2D {
     /// :type num_iterations: int
     ///
     /// :returns: The smoothed path
-    /// :rtype: Path
+    /// :rtype: Path2D
     pub fn smoothed_path_chaikin(&self, num_iterations: usize) -> Self {
         self.path.smoothed_path_chaikin(num_iterations).into()
     }
@@ -303,7 +324,7 @@ impl Path2D {
     /// :type epsilon: float
     ///
     /// :returns: The sub path
-    /// :rtype: Path
+    /// :rtype: Path2D
     pub fn sub_path(
         &self,
         start: Option<[f64; 2]>,
@@ -311,6 +332,36 @@ impl Path2D {
         epsilon: f64,
     ) -> Option<Self> {
         self.path.sub_path(start, end, epsilon).map(Path2D::from)
+    }
+
+    #[pyo3(signature = (sus_angle=2.8))]
+    /// detect_corrupted_point_order(sus_angle=2.8)
+    ///
+    /// Returns the list of all indices where the path turns sharper than sus_angle.
+    ///
+    /// :param sus_angle: Every turn sharper than this angle is suspicious.
+    ///
+    /// :type sus_angle: float
+    ///
+    /// :returns: Indices of suspicious points
+    /// :rtype: list[int]
+    pub fn detect_corrupted_point_order(&self, sus_angle: f64) -> Vec<usize> {
+        self.path.detect_corrupted_point_order(sus_angle)
+    }
+
+    #[pyo3(signature = (sus_angle=2.8))]
+    /// repair_corrupted_point_order(sus_angle=2.8)
+    ///
+    /// Repairs corrupted point order by removing points that progress in the wrong direction.
+    ///
+    /// :param sus_angle: Every turn sharper than this angle is suspicious.
+    ///
+    /// :type sus_angle: float
+    ///
+    /// :returns: Repaired path
+    /// :rtype: Path2D
+    pub fn repair_corrupted_point_order(&self, sus_angle: f64) -> Self {
+        self.path.repair_corrupted_point_order(sus_angle).into()
     }
 }
 

@@ -1,5 +1,7 @@
 use ndarray::{stack, Array1, Axis};
 use ndarray_linalg::SVD;
+use numpy::PyArray2;
+use pyo3::{Bound, Python};
 use splines::{Interpolation, Key, Spline};
 
 pub fn compute_differences(arr: &[f64]) -> Vec<f64> {
@@ -153,4 +155,10 @@ pub fn compute_projection(a: [f64; 2], b: [f64; 2], point: [f64; 2]) -> Projecti
 
 pub fn point_equals(a: [f64; 2], b: [f64; 2], epsilon: f64) -> bool {
     (a[0] - b[0]).abs() <= epsilon && (a[1] - b[1]).abs() <= epsilon
+}
+
+pub fn vec2_to_pyarray2<'py>(py: Python<'py>, vec2: &[[f64; 2]]) -> Bound<'py, PyArray2<f64>> {
+    PyArray2::from_vec2_bound(py, &vec2.iter().map(|it| it.to_vec()).collect::<Vec<_>>())
+        // unwrap is ok here, since shape is always (n, 2) ⇒ cannot panic
+        .unwrap()
 }

@@ -1,3 +1,4 @@
+use crate::path2d::{ElasticBandMethod, InterpolationMethod, ResamplingMethod};
 use pyo3::prelude::*;
 
 pub mod path2d;
@@ -8,9 +9,9 @@ mod util;
 #[pymodule]
 fn path_toolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<python::Path2D>()?;
-    m.add_class::<python::ResamplingMethod>()?;
-    m.add_class::<python::InterpolationMethod>()?;
-    m.add_class::<python::ElasticBandMethod>()?;
+    m.add_class::<ResamplingMethod>()?;
+    m.add_class::<InterpolationMethod>()?;
+    m.add_class::<ElasticBandMethod>()?;
 
     Ok(())
 }

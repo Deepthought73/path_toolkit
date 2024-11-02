@@ -1,3 +1,4 @@
+mod path_error_detection;
 mod path_smoothing;
 
 use crate::util::{
