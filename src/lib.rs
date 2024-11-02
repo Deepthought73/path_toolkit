@@ -1,13 +1,13 @@
-use crate::path::{Path, ResamplingType};
+use crate::path2d::{ElasticBandMethod, InterpolationMethod, Path2D, ResamplingMethod};
 use pyo3::prelude::*;
 
-mod path;
+mod path2d;
 mod util;
 
 #[test]
 fn sub_path_edge_cases_test() {
     let epsilon = 1e-2;
-    let path = Path::from_points(vec![[0.0, 0.0], [1.0, 1.0], [3.0, 3.0]]);
+    let path = Path2D::from_points(vec![[0.0, 0.0], [1.0, 1.0], [3.0, 3.0]]);
 
     assert_eq!(
         path.sub_path(None, None, epsilon).unwrap().points,
@@ -59,7 +59,7 @@ fn sub_path_edge_cases_test() {
 #[test]
 fn path_length_from_point_test() {
     let epsilon = 1e-2;
-    let path = Path::from_points(vec![[0.0, 0.0], [1.0, 0.0], [3.0, 0.0]]);
+    let path = Path2D::from_points(vec![[0.0, 0.0], [1.0, 0.0], [3.0, 0.0]]);
 
     assert_eq!(
         path.path_length_from_point([0.0, 0.0], epsilon).unwrap(),
@@ -83,8 +83,10 @@ fn path_length_from_point_test() {
 /// Useful tools for working with paths
 #[pymodule]
 fn path_toolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Path>()?;
-    m.add_class::<ResamplingType>()?;
+    m.add_class::<Path2D>()?;
+    m.add_class::<ResamplingMethod>()?;
+    m.add_class::<InterpolationMethod>()?;
+    m.add_class::<ElasticBandMethod>()?;
 
     Ok(())
 }

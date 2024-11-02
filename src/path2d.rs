@@ -2,9 +2,9 @@ use crate::util::{
     compute_differences, compute_projection, extract_points_x, extract_points_y, linspace,
     make_spline, point_equals, taubin_circle_fit, Projection,
 };
+use numpy::{PyArray1, PyArray2, ToPyArray};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
 use pyo3::{pyclass, pymethods};
 use simple_qp::constraint;
 use simple_qp::expressions::quadratic_expression::QuadraticExpression;
@@ -15,6 +15,7 @@ use splines::Interpolation;
 use std::cell::OnceCell;
 
 #[pyclass]
+#[derive(Clone, Debug)]
 /// Path(points=None, x=None, y=None)
 ///
 /// Class storing a 2D path.
@@ -26,7 +27,7 @@ use std::cell::OnceCell;
 /// :type points: list[list[float]]
 /// :type x: list[float]
 /// :type y: list[float]
-pub struct Path {
+pub struct Path2D {
     #[pyo3(get)]
     pub points: Vec<[f64; 2]>,
     #[pyo3(get)]
@@ -39,15 +40,75 @@ pub struct Path {
     curvature: OnceCell<Vec<f64>>,
 }
 
+#[pyclass(eq)]
+#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+pub enum ResamplingMethod {
+    ByNumberPoints {
+        number_points: usize,
+    },
+    BySamplingDistance {
+        sampling_distance: f64,
+        drop_last: bool,
+    },
+}
+
+#[pymethods]
+impl ResamplingMethod {
+    #[staticmethod]
+    /// by_number_points(number_points)
+    ///
+    /// The path will be equidistantly resampled using the given number of points.
+    ///
+    /// :param number_points: Number of points
+    ///
+    /// :type number_points: int
+    ///
+    /// :returns: The resampling method
+    /// :rtype: ResamplingMethod
+    pub fn by_number_points(number_points: usize) -> Self {
+        Self::ByNumberPoints { number_points }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (sampling_distance, drop_last=true))]
+    /// by_sampling_distance(sampling_distance, drop_last=True)
+    ///
+    /// The path will be resampled using the given sampling_distance.
+    /// The distance between the last and second last point will differ from sampling distance.
+    /// Setting drop_last=True will omit the last point.
+    ///
+    /// :param sampling_distance: Sampling distance
+    /// :param drop_last: Omits the last point when true.
+    ///
+    /// :type sampling_distance: float
+    /// :type drop_last: bool
+    ///
+    /// :returns: The resampling method
+    /// :rtype: ResamplingMethod
+    pub fn by_sampling_distance(sampling_distance: f64, drop_last: bool) -> Self {
+        Self::BySamplingDistance {
+            sampling_distance,
+            drop_last,
+        }
+    }
+}
+
 #[pyclass(eq, eq_int)]
-#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ResamplingType {
+#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd, Debug)]
+pub enum InterpolationMethod {
     Cubic,
     Linear,
 }
 
+#[pyclass(eq, eq_int)]
+#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd, Debug)]
+pub enum ElasticBandMethod {
+    SquareBounds,
+    OrthogonalBounds,
+}
+
 #[pymethods]
-impl Path {
+impl Path2D {
     #[new]
     #[pyo3(signature = (points=None, x=None, y=None))]
     pub fn new(
@@ -107,8 +168,16 @@ impl Path {
     }
 
     #[getter]
-    pub fn get_path_length_per_point<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.path_length_per_point())
+    pub fn get_path_length_per_point(&self) -> Vec<f64> {
+        self.path_length_per_point().to_vec()
+    }
+
+    #[getter]
+    pub fn get_path_length_per_point_np<'py>(
+        &'py self,
+        py: Python<'py>,
+    ) -> Bound<'py, PyArray1<f64>> {
+        self.path_length_per_point().to_pyarray_bound(py)
     }
 
     #[getter]
@@ -118,18 +187,44 @@ impl Path {
     }
 
     #[getter]
-    pub fn get_orientation<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.orientation())
+    pub fn get_orientation(&self) -> Vec<f64> {
+        self.orientation().to_vec()
     }
 
     #[getter]
-    pub fn get_unit_tangent_vector<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.unit_tangent_vector())
+    pub fn get_orientation_np<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        self.orientation().to_pyarray_bound(py)
     }
 
     #[getter]
-    pub fn get_curvature<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.curvature())
+    pub fn get_unit_tangent_vector(&self) -> Vec<[f64; 2]> {
+        self.unit_tangent_vector().to_vec()
+    }
+
+    #[getter]
+    pub fn get_unit_tangent_vector_np<'py>(
+        &'py self,
+        py: Python<'py>,
+    ) -> Bound<'py, PyArray2<f64>> {
+        PyArray2::from_vec2_bound(
+            py,
+            &self
+                .unit_tangent_vector()
+                .iter()
+                .map(|it| it.to_vec())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    #[getter]
+    pub fn get_curvature(&self) -> Vec<f64> {
+        self.curvature().to_vec()
+    }
+
+    #[getter]
+    pub fn get_curvature_np<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        self.curvature().to_pyarray_bound(py)
     }
 
     #[pyo3(signature = (max_rmse=0.15))]
@@ -212,31 +307,57 @@ impl Path {
         }
     }
 
-    #[pyo3(signature = (number_points, resampling_type=ResamplingType::Linear))]
-    /// resampled_path(number_points, resampling_type=ResamplingType.Linear)
+    #[pyo3(signature = (resampling_method, resampling_type=InterpolationMethod::Linear, epsilon=0.01))]
+    /// resampled_path(resampling_method, resampling_type=InterpolationMethod.Linear, epsilon=0.01)
     ///
     /// Resamples the path equidistantly using the given interpolation method.
     ///
     /// :param number_points: Number of points of the resampled path
     /// :param resampling_type: Method of interpolation
+    /// :param epsilon: The distance within two points are considered equal
     ///
     /// :type number_points: int
     /// :type resampling_type: ResamplingType
+    /// :type epsilon: float
     ///
     /// :returns: Resampled path
     /// :rtype: Path
-    pub fn resampled_path(&self, number_points: usize, resampling_type: ResamplingType) -> Self {
-        let s = self.path_length_per_point();
-        let path_length = *s.last().unwrap();
+    pub fn resampled_path(
+        &self,
+        resampling_method: ResamplingMethod,
+        resampling_type: InterpolationMethod,
+        epsilon: f64,
+    ) -> Self {
+        if self.points.len() <= 1 {
+            return self.clone();
+        }
 
         let interpolation = match resampling_type {
-            ResamplingType::Cubic => Interpolation::CatmullRom,
-            ResamplingType::Linear => Interpolation::Linear,
+            InterpolationMethod::Cubic => Interpolation::CatmullRom,
+            InterpolationMethod::Linear => Interpolation::Linear,
         };
+
+        let s = self.path_length_per_point();
         let x_spline = make_spline(s, &self.x, interpolation);
         let y_spline = make_spline(s, &self.y, interpolation);
 
-        let s_resampled = linspace(0, path_length, number_points);
+        let s_resampled = match resampling_method {
+            ResamplingMethod::ByNumberPoints { number_points } => {
+                linspace(0, self.get_length(), number_points)
+            }
+            ResamplingMethod::BySamplingDistance {
+                sampling_distance,
+                drop_last,
+            } => {
+                let number_points = (self.get_length() / sampling_distance).floor();
+                let new_length = sampling_distance * number_points;
+                let mut res = linspace(0, new_length, number_points as usize + 1);
+                if !drop_last && (new_length - self.get_length()).abs() > epsilon {
+                    res.push(*s.last().unwrap());
+                }
+                res
+            }
+        };
 
         let points: Vec<[f64; 2]> = s_resampled
             .iter()
@@ -251,7 +372,8 @@ impl Path {
         Self::from_points(points)
     }
 
-    /// smoothed_path(max_deviation)
+    #[pyo3(signature = (max_deviation, elastic_band_type = ElasticBandMethod::OrthogonalBounds))]
+    /// smoothed_path_elastic_band(max_deviation, elastic_band_type=ElasticBandMethod.OrthogonalBounds)
     ///
     /// Smoothes the path using an algorithm from Autoware [1]. A QP has to be solved for that.
     /// CLARABEL [2] is used as the solver.
@@ -260,19 +382,24 @@ impl Path {
     /// [2] https://clarabel.org/stable/
     ///
     /// :param max_deviation: Maximum deviation from the original path
+    /// :param elastic_band_type: Type of constraining the deviation to the original path
     ///
     /// :type max_deviation: float
+    /// :type elastic_band_type: ElasticBandType
     ///
     /// :returns: The smoothed path
     /// :rtype: Path
-    pub fn smoothed_path(&self, max_deviation: f64) -> Option<Self> {
+    pub fn smoothed_path_elastic_band(
+        &self,
+        max_deviation: f64,
+        elastic_band_type: ElasticBandMethod,
+    ) -> Option<Self> {
         let n = self.points.len();
         let orientation = self.orientation();
 
         let mut prob = ProblemVariables::default();
         let xs = prob.add_vector(n, None, None);
         let ys = prob.add_vector(n, None, None);
-        let deviation = prob.add_vector(n - 2, None, None);
 
         let mut objective = QuadraticExpression::default();
         for coords in [&xs, &ys] {
@@ -287,19 +414,35 @@ impl Path {
             constraint!(xs[n - 1] == self.x[n - 1]),
             constraint!(ys[n - 1] == self.y[n - 1]),
         ];
-        for i in 1..n - 1 {
-            let orthogonal_vector = [
-                max_deviation * orientation[i].sin(),
-                -max_deviation * orientation[i].cos(),
-            ];
-            constraints.push(constraint!(
-                self.x[i] + deviation[i - 1] * orthogonal_vector[0] == xs[i]
-            ));
-            constraints.push(constraint!(
-                self.y[i] + deviation[i - 1] * orthogonal_vector[1] == ys[i]
-            ));
-            constraints.push(constraint!(deviation[i - 1] <= 1.0));
-            constraints.push(constraint!(deviation[i - 1] >= -1.0));
+
+        match elastic_band_type {
+            ElasticBandMethod::SquareBounds => {
+                for i in 1..n - 1 {
+                    constraints.push(constraint!(
+                        -max_deviation <= xs[i] - self.x[i] <= max_deviation
+                    ));
+                    constraints.push(constraint!(
+                        -max_deviation <= ys[i] - self.y[i] <= max_deviation
+                    ));
+                }
+            }
+            ElasticBandMethod::OrthogonalBounds => {
+                let deviation = prob.add_vector(n - 2, None, None);
+                for i in 1..n - 1 {
+                    let orthogonal_vector = [
+                        max_deviation * orientation[i].sin(),
+                        -max_deviation * orientation[i].cos(),
+                    ];
+                    constraints.push(constraint!(
+                        self.x[i] + deviation[i - 1] * orthogonal_vector[0] == xs[i]
+                    ));
+                    constraints.push(constraint!(
+                        self.y[i] + deviation[i - 1] * orthogonal_vector[1] == ys[i]
+                    ));
+                    constraints.push(constraint!(deviation[i - 1] <= 1.0));
+                    constraints.push(constraint!(deviation[i - 1] >= -1.0));
+                }
+            }
         }
 
         let mut solver = ClarabelSolver::default();
@@ -322,6 +465,41 @@ impl Path {
         Some(Self::from_points(new_points))
     }
 
+    /// smoothed_path_chaikin(num_iterations)
+    ///
+    /// Smoothes the path using the Chaikin's path smoothing algorithm.
+    ///
+    /// :param num_iterations: Number of iterations used for Chaikin's path smoothing algorithm.
+    ///
+    /// :type num_iterations: int
+    ///
+    /// :returns: The smoothed path
+    /// :rtype: Path
+    pub fn smoothed_path_chaikin(&self, num_iterations: usize) -> Self {
+        if self.points.len() <= 1 {
+            return self.clone();
+        }
+
+        let mut ret = self.points.clone();
+        for _ in 0..num_iterations {
+            let mut new_points = vec![self.points[0]];
+            for ps in ret.windows(2) {
+                new_points.push([
+                    ps[0][0] * 0.75 + ps[1][0] * 0.25,
+                    ps[0][1] * 0.75 + ps[1][1] * 0.25,
+                ]);
+                new_points.push([
+                    ps[0][0] * 0.25 + ps[1][0] * 0.75,
+                    ps[0][1] * 0.25 + ps[1][1] * 0.75,
+                ]);
+            }
+            new_points.push(*self.points.last().unwrap());
+            ret = new_points;
+        }
+
+        Self::from_points(ret)
+    }
+
     /// without_duplicate_points()
     ///
     /// Returns the path without consecutive duplicate points.
@@ -342,8 +520,8 @@ impl Path {
         Self::from_points(new_points)
     }
 
-    #[pyo3(signature = (point, epsilon=1e-2))]
-    /// index_from_point(point, epsilon=1e-2)
+    #[pyo3(signature = (point, epsilon=0.01))]
+    /// index_from_point(point, epsilon=0.01)
     ///
     /// Returns the index of the nearest point on the path in front of the given point.
     /// If the point outside the path, None is returned
@@ -360,8 +538,8 @@ impl Path {
         self.nearest_projection(point, epsilon).map(|(i, _)| i)
     }
 
-    #[pyo3(signature = (point, epsilon=1e-2))]
-    /// path_length_from_point(point, epsilon=1e-2)
+    #[pyo3(signature = (point, epsilon=0.01))]
+    /// path_length_from_point(point, epsilon=0.01)
     ///
     /// Returns the path length from the first point to the given point.
     /// If the point outside the path, None is returned
@@ -444,7 +622,7 @@ impl Path {
     }
 }
 
-impl Path {
+impl Path2D {
     fn path_length_per_point(&self) -> &[f64] {
         self.path_length_per_point.get_or_init(|| {
             let n = self.points.len();
