@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "path_toolkit"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 pyo3 = { version = "0.22.5", features = ["extension-module"] }
