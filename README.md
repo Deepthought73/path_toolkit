@@ -36,7 +36,6 @@ The result is cached such that no additional computation is required on repeated
 |:-------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `resampled_path`               | Returns the path with equidistantly resampled points.                                                                                                                |
 | `smoothed_path`                | Returns the smoothed path using [this](https://autowarefoundation.github.io/autoware.universe/main/planning/autoware_path_smoother/docs/eb/) approach from Autoware. |
-| `without_duplicate_points`     | Returns a path without consecutive duplicate points.                                                                                                                 |
 | `find_circle_segments`         | Returns a list of circle segments with the starting end ending index of the point list and respective radius.                                                        |
 | `compute_circle_fit_curvature` | Returns the curvature profile of the path using the circle segments from `find_circle_segments`.                                                                     |
 | `index_from_point`             | Finds the index of the nearest point from a given point.                                                                                                             |

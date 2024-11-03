@@ -1,10 +1,10 @@
 use crate::util::{
-    compute_differences, compute_projection, extract_points_x, extract_points_y, linspace,
-    make_spline, point_equals, taubin_circle_fit, Projection,
+    compute_differences, compute_projection, linspace, make_spline, point_equals,
+    taubin_circle_fit, Projection,
 };
-use pyo3::exceptions::PyTypeError;
+use numpy::PyArray1;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
 use pyo3::{pyclass, pymethods};
 use simple_qp::constraint;
 use simple_qp::expressions::quadratic_expression::QuadraticExpression;
@@ -15,6 +15,7 @@ use splines::Interpolation;
 use std::cell::OnceCell;
 
 #[pyclass]
+#[derive(Default, Debug, Clone)]
 /// Path(points=None, x=None, y=None)
 ///
 /// Class storing a 2D path.
@@ -33,10 +34,13 @@ pub struct Path {
     pub x: Vec<f64>,
     #[pyo3(get)]
     pub y: Vec<f64>,
+
     path_length_per_point: OnceCell<Vec<f64>>,
     orientation: OnceCell<Vec<f64>>,
     unit_tangent_vector: OnceCell<Vec<[f64; 2]>>,
     curvature: OnceCell<Vec<f64>>,
+
+    associated_values: Vec<Vec<f64>>,
 }
 
 #[pyclass(eq, eq_int)]
@@ -58,57 +62,15 @@ impl Path {
         match (points, x, y) {
             (Some(points), None, None) => Ok(Self::from_points(points)),
             (None, Some(x), Some(y)) => Ok(Self::from_coordinates(x, y)),
-            _ => Err(PyTypeError::new_err(
+            _ => Err(PyValueError::new_err(
                 "Create path either from points or coordinates",
             )),
         }
     }
 
-    #[staticmethod]
-    /// from_points(points)
-    ///
-    /// Initiates a path from a list of points.
-    ///
-    /// :param points: List of points
-    ///
-    /// :type points: list[list[float]]
-    pub fn from_points(points: Vec<[f64; 2]>) -> Self {
-        Self {
-            x: extract_points_x(&points),
-            y: extract_points_y(&points),
-            points,
-            path_length_per_point: Default::default(),
-            orientation: Default::default(),
-            unit_tangent_vector: Default::default(),
-            curvature: Default::default(),
-        }
-    }
-
-    #[staticmethod]
-    /// from_coordinates(x, y)
-    ///
-    /// Initiates a path from its x and y coordinates
-    ///
-    /// :param x: List of x coordinates
-    /// :param y: List of y coordinates
-    ///
-    /// :type x: list[float]
-    /// :type y: list[float]
-    pub fn from_coordinates(x: Vec<f64>, y: Vec<f64>) -> Self {
-        Self {
-            points: x.iter().zip(y.iter()).map(|it| [*it.0, *it.1]).collect(),
-            x,
-            y,
-            path_length_per_point: Default::default(),
-            orientation: Default::default(),
-            unit_tangent_vector: Default::default(),
-            curvature: Default::default(),
-        }
-    }
-
     #[getter]
-    pub fn get_path_length_per_point<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.path_length_per_point())
+    pub fn get_path_length_per_point<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice_bound(py, self.path_length_per_point())
     }
 
     #[getter]
@@ -118,18 +80,18 @@ impl Path {
     }
 
     #[getter]
-    pub fn get_orientation<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.orientation())
+    pub fn get_orientation(&self) -> Vec<f64> {
+        self.orientation().to_vec()
     }
 
     #[getter]
-    pub fn get_unit_tangent_vector<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.unit_tangent_vector())
+    pub fn get_unit_tangent_vector(&self) -> Vec<[f64; 2]> {
+        self.unit_tangent_vector().to_vec()
     }
 
     #[getter]
-    pub fn get_curvature<'py>(&'py self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, self.curvature())
+    pub fn get_curvature(&self) -> Vec<f64> {
+        self.curvature().to_vec()
     }
 
     #[pyo3(signature = (max_rmse=0.15))]
@@ -226,8 +188,13 @@ impl Path {
     /// :returns: Resampled path
     /// :rtype: Path
     pub fn resampled_path(&self, number_points: usize, resampling_type: ResamplingType) -> Self {
+        if self.points.is_empty() {
+            return self.clone();
+        }
+
         let s = self.path_length_per_point();
-        let path_length = *s.last().unwrap();
+        let path_length = self.get_length();
+        let s_resampled = linspace(0, path_length, number_points);
 
         let interpolation = match resampling_type {
             ResamplingType::Cubic => Interpolation::CatmullRom,
@@ -236,19 +203,30 @@ impl Path {
         let x_spline = make_spline(s, &self.x, interpolation);
         let y_spline = make_spline(s, &self.y, interpolation);
 
-        let s_resampled = linspace(0, path_length, number_points);
-
         let points: Vec<[f64; 2]> = s_resampled
             .iter()
-            .map(|it| {
+            .map(|s| {
                 [
-                    x_spline.sample(*it).unwrap_or(0.0),
-                    y_spline.sample(*it).unwrap_or(0.0),
+                    x_spline.sample(*s).unwrap_or(0.0),
+                    y_spline.sample(*s).unwrap_or(0.0),
                 ]
             })
             .collect();
+        let mut new_path = Self::from_points(points);
 
-        Self::from_points(points)
+        new_path.associated_values = self
+            .associated_values
+            .iter()
+            .map(|values| {
+                let spline = make_spline(s, values, interpolation);
+                s_resampled
+                    .iter()
+                    .map(|s| spline.sample(*s).unwrap_or(0.0))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        new_path
     }
 
     /// smoothed_path(max_deviation)
@@ -314,28 +292,8 @@ impl Path {
         Self::from_points(new_points)
     }
 
-    /// without_duplicate_points()
-    ///
-    /// Returns the path without consecutive duplicate points.
-    ///
-    /// :returns: New path
-    /// :rtype: Path
-    pub fn without_duplicate_points(&self) -> Self {
-        let mut new_points = vec![];
-        for p in self.points.iter() {
-            if let Some(last_point) = new_points.last() {
-                if last_point != p {
-                    new_points.push(*p);
-                }
-            } else {
-                new_points.push(*p);
-            }
-        }
-        Self::from_points(new_points)
-    }
-
-    #[pyo3(signature = (point, epsilon=1e-2))]
-    /// index_from_point(point, epsilon=1e-2)
+    #[pyo3(signature = (point, epsilon=0.01))]
+    /// index_from_point(point, epsilon=0.01)
     ///
     /// Returns the index of the nearest point on the path in front of the given point.
     /// If the point outside the path, None is returned
@@ -352,8 +310,8 @@ impl Path {
         self.nearest_projection(point, epsilon).map(|(i, _)| i)
     }
 
-    #[pyo3(signature = (point, epsilon=1e-2))]
-    /// path_length_from_point(point, epsilon=1e-2)
+    #[pyo3(signature = (point, epsilon=0.01))]
+    /// path_length_from_point(point, epsilon=0.01)
     ///
     /// Returns the path length from the first point to the given point.
     /// If the point outside the path, None is returned
@@ -421,22 +379,83 @@ impl Path {
         }
 
         let mut new_points = vec![];
+        let mut associated_values = vec![vec![]; self.associated_values.len()];
         if start_index > 0
             && start_index < last_index
             && !point_equals(start_point, self.points[start_index], epsilon)
         {
             new_points.push(start_point);
+            for (i, associated_value) in self.associated_values.iter().enumerate() {
+                associated_values[i].push(associated_value[start_index]);
+            }
         }
         new_points.extend(&self.points[start_index..end_index]);
+        for associated_value in self.associated_values.iter() {
+            // TODO associated_values.push(associated_value[start_index]);
+        }
         if new_points.is_empty() || !point_equals(end_point, *new_points.last().unwrap(), epsilon) {
             new_points.push(end_point);
+            for (i, associated_value) in self.associated_values.iter().enumerate() {
+                associated_values[i].push(associated_value[end_index]);
+            }
         }
 
-        Some(Self::from_points(new_points))
+        let mut ret = Self::from_points(new_points);
+        ret.associated_values = associated_values;
+        Some(ret)
+    }
+
+    /// add_associated_values(values)
+    ///
+    /// Adds an associated value
+    ///
+    /// :param values: The values that should be added as associated to the path
+    ///
+    /// :type values: list[float]
+    ///
+    /// :returns: The handle for accessing the associated values again
+    /// :rtype: int
+    pub fn add_associated_values(&mut self, values: Vec<f64>) -> PyResult<usize> {
+        if values.len() != self.points.len() {
+            Err(PyValueError::new_err(format!(
+                "The associated value has length {}, although {} was expected",
+                values.len(),
+                self.points.len()
+            )))?
+        }
+        let index = self.associated_values.len();
+        self.associated_values.push(values);
+        Ok(index)
+    }
+
+    pub fn associated_value(&self, handle: usize) -> Option<Vec<f64>> {
+        Some(self.associated_values.get(handle)?.clone())
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!("{:?}", self)
     }
 }
 
 impl Path {
+    pub fn from_points(points: Vec<[f64; 2]>) -> Self {
+        Self {
+            x: points.iter().map(|it| it[0]).collect(),
+            y: points.iter().map(|it| it[1]).collect(),
+            points,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_coordinates(x: Vec<f64>, y: Vec<f64>) -> Self {
+        Self {
+            points: x.iter().zip(y.iter()).map(|it| [*it.0, *it.1]).collect(),
+            x,
+            y,
+            ..Default::default()
+        }
+    }
+
     fn path_length_per_point(&self) -> &[f64] {
         self.path_length_per_point.get_or_init(|| {
             let n = self.points.len();
