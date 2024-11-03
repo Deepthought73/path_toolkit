@@ -363,6 +363,60 @@ impl Path2D {
     pub fn repair_corrupted_point_order(&self, sus_angle: f64) -> Self {
         self.path.repair_corrupted_point_order(sus_angle).into()
     }
+
+    /// add_associated_values(values)
+    ///
+    /// Adds an associated value.
+    ///
+    /// :param values: The values that should be added as associated to the path
+    ///
+    /// :type values: list[float]
+    ///
+    /// :returns: The handle for accessing the associated values again
+    /// :rtype: int
+    pub fn add_associated_values(&mut self, values: Vec<f64>) -> PyResult<usize> {
+        self.path
+            .add_associated_values(values)
+            .map_err(PyTypeError::new_err)
+    }
+
+    /// associated_values(handle)
+    ///
+    /// Returns the respective associated values.
+    ///
+    /// :param handle: The handle of the associated values
+    ///
+    /// :type handle: int
+    ///
+    /// :returns: The associated values
+    /// :rtype: list[float]
+    pub fn associated_values(&self, handle: usize) -> Option<Vec<f64>> {
+        self.path.associated_values(handle).clone()
+    }
+
+    /// associated_values_np(handle)
+    ///
+    /// Returns the respective associated values.
+    ///
+    /// :param handle: The handle of the associated values
+    ///
+    /// :type handle: int
+    ///
+    /// :returns: The associated values
+    /// :rtype: numpy.ndarray
+    pub fn associated_value_np<'py>(
+        &'py self,
+        handle: usize,
+        py: Python<'py>,
+    ) -> Option<Bound<'py, PyArray1<f64>>> {
+        self.path
+            .associated_values(handle)
+            .map(|it| it.to_pyarray_bound(py))
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
 }
 
 impl From<path2d::Path2D> for Path2D {

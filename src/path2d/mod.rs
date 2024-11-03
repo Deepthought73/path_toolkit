@@ -13,10 +13,13 @@ pub struct Path2D {
     pub points: Vec<[f64; 2]>,
     pub x: Vec<f64>,
     pub y: Vec<f64>,
+
     path_length_per_point: OnceCell<Vec<f64>>,
     orientation: OnceCell<Vec<f64>>,
     unit_tangent_vector: OnceCell<Vec<[f64; 2]>>,
     curvature: OnceCell<Vec<f64>>,
+
+    associated_values: Vec<Vec<f64>>,
 }
 
 #[pyclass(eq)]
@@ -221,7 +224,21 @@ impl Path2D {
             })
             .collect();
 
-        Self::from_points(points)
+        let mut new_path = Self::from_points(points);
+
+        new_path.associated_values = self
+            .associated_values
+            .iter()
+            .map(|values| {
+                let spline = make_spline(s, values, interpolation);
+                s_resampled
+                    .iter()
+                    .map(|s| spline.sample(*s).unwrap_or(0.0))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        new_path
     }
 
     pub fn index_from_point(&self, point: [f64; 2], epsilon: f64) -> Option<usize> {
@@ -265,17 +282,57 @@ impl Path2D {
         }
 
         let mut new_points = vec![];
+        let mut associated_values = vec![vec![]; self.associated_values.len()];
         if start_index > 0
             && start_index < last_index
             && !point_equals(start_point, self.points[start_index], epsilon)
         {
             new_points.push(start_point);
+            for (i, associated_value) in self.associated_values.iter().enumerate() {
+                if start_index != 0 {
+                    associated_values[i].push(
+                        associated_value[start_index - 1]
+                            + (associated_value[start_index] - associated_value[start_index - 1])
+                                * start_nsp,
+                    );
+                } else {
+                    associated_values[i].push(associated_value[start_index]);
+                }
+            }
         }
         new_points.extend(&self.points[start_index..end_index]);
-        if new_points.is_empty() || !point_equals(end_point, *new_points.last()?, epsilon) {
+        for (i, associated_value) in self.associated_values.iter().enumerate() {
+            associated_values[i].extend(&associated_value[start_index..end_index]);
+        }
+        if new_points.is_empty() || !point_equals(end_point, *new_points.last().unwrap(), epsilon) {
             new_points.push(end_point);
+            for (i, associated_value) in self.associated_values.iter().enumerate() {
+                associated_values[i].push(
+                    associated_value[end_index - 1]
+                        + (associated_value[end_index] - associated_value[end_index - 1]) * end_nsp,
+                );
+            }
         }
 
-        Some(Self::from_points(new_points))
+        let mut ret = Self::from_points(new_points);
+        ret.associated_values = associated_values;
+        Some(ret)
+    }
+
+    pub fn add_associated_values(&mut self, values: Vec<f64>) -> Result<usize, String> {
+        if values.len() != self.points.len() {
+            Err(format!(
+                "The associated value has length {}, although {} was expected",
+                values.len(),
+                self.points.len()
+            ))?
+        }
+        let index = self.associated_values.len();
+        self.associated_values.push(values);
+        Ok(index)
+    }
+
+    pub fn associated_values(&self, handle: usize) -> Option<Vec<f64>> {
+        Some(self.associated_values.get(handle)?.clone())
     }
 }
