@@ -41,3 +41,10 @@ The result is cached such that no additional computation is required on repeated
 | `index_from_point`             | Finds the index of the nearest point from a given point.                                                                                                             |
 | `path_length_from_point`       | Finds the path length of a given point.                                                                                                                              |
 | `sub_path`                     | Returns a path ranging from a given start point to a given end point.                                                                                                |
+
+## Todos
+
+- Write more tests for edge cases
+- Analyse potentially dangerous unwraps
+- Publish package to crates.io
+- Improve method documentation
